@@ -14,19 +14,40 @@ const io = new Server(server, {
 
 app.use(cors());
 
+// Store socket connections by userId
+const userSocketMap = {};
+
 io.on("connection", (socket) => {
   console.log("A client connected:", socket.id);
 
-  // Listen for booking creation event from the Next.js backend
+  // Join the user to a specific room based on their userId
+  socket.on("register-host", (userId) => {
+    userSocketMap[userId] = socket.id; // Map userId to socket ID
+    socket.join(userId); // Add the socket to a room identified by userId
+    console.log(`Host ${userId} registered with socket ID ${socket.id}`);
+  });
+
+  // Handle booking events and notify the relevant host
   socket.on("new-booking", (booking) => {
     console.log("New booking received:", booking);
 
-    // Emit alert to connected hosts
-    io.emit("host-alert", booking);
+    const { listingUserId } = booking; // The userId of the host who created the listing
+    if (userSocketMap[listingUserId]) {
+      // Emit alert only to the specific host's room
+      io.to(listingUserId).emit("host-alert", booking);
+      console.log(`Alert sent to host ${listingUserId}`);
+    }
   });
 
+  // Cleanup on disconnect
   socket.on("disconnect", () => {
-    console.log("A client disconnected:", socket.id);
+    for (const [userId, socketId] of Object.entries(userSocketMap)) {
+      if (socketId === socket.id) {
+        delete userSocketMap[userId];
+        console.log(`Host ${userId} disconnected`);
+        break;
+      }
+    }
   });
 });
 
